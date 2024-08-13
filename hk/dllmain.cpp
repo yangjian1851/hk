@@ -11,10 +11,17 @@
 #include <tchar.h> 
 #include <winternl.h>
 
-char dll[16] = "41002008.dll";
+TCHAR exe[16] = L"360.exe";
+char hkdll[] = "hk.dll";
+char dll[] = "add.dll";
 // 定义原始函数类型和函数指针
-typedef void (* func)(void *);
+typedef void (* func)();
 func OriginalFunction = NULL;
+//LPVOID oldcode;
+
+
+#define HOOK_SIZE 5  // 5字节用于存放跳转指令
+DWORD oldcode;
 
 bool load()
 {
@@ -24,9 +31,11 @@ bool load()
 		return false;
 	}
 	// 计算函数地址，加上偏移
-	DWORD offset = 0x1AC70;//0x1001AC70
+	DWORD offset = 0x1003;//0x10001000
 	OriginalFunction = (func)((DWORD_PTR)hModule + offset);
-
+	// 保存目标地址处的原始指令
+	//memcpy(originalCode, (LPVOID)((DWORD_PTR)hModule + offset +5), 5);
+	oldcode = (DWORD)OriginalFunction + 5;
 	// 检查函数地址
 	if (!OriginalFunction) {
 		std::cerr << "Failed to get function address" << std::endl;
@@ -36,34 +45,18 @@ bool load()
 	std::cerr << "success load " << dll << std::endl;
 	return true;
 }
-
 // Hook 函数
-int WINAPI HookedFunction(void *p) {
-	//先调用原始的
-	OriginalFunction(p);
-	//在处理具体的
-	std::cout << "Hooked Function called with parameters: " << p << std::endl;
-	unsigned int count = *((unsigned __int8*)p + 8264);//猜测这是人数
+void __declspec(naked)  HookedFunction() {
+	__asm {
+		; mov     edx, [ecx + 8]; 恢复被破坏的代码
+		; test    edx, edx
+		mov     ecx, [ebp + 8]
+		test    ecx, ecx
 
-	char card[0x68] = { 0 };
-	memcpy(card, ((unsigned __int8*)p + 10142), 0x68);//得到所有的卡牌
-	std::cout << "card data's: " << std::endl;
-	for (int i=0; i<0x68; i++)
-	{
-		if ((i != 0) && (i%13 == 0))
-		{
-			std::cout << card[i] << std::endl;
-		}
-		else {
-			std::cout << card[i];
-		}
-		
+		add [ecx + 8], 4; 修改循环次数
+		jmp oldcode; 跳回到原始代码后面的位置
 	}
-	//这里可以修改卡牌的具体逻辑，得到具体的数据后实现
-
-	//将修改后的卡牌重新还原
-	memcpy(((char*)p + 10142), card, 0x68);
-	return 0;
+	//OriginalFunction();
 }
 
 void AttachHooks() {
@@ -87,25 +80,25 @@ void DetachHooks() {
 	DetourTransactionCommit();
 }
 
-void InjectDLL(DWORD processID, const char* dllPath) {
+bool InjectDLL(DWORD processID, const char* dllPath) {
 	HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, processID);
 	if (hProcess == NULL) {
 		std::cerr << "Failed to open process: " << GetLastError() << std::endl;
-		return;
+		return false;
 	}
 
 	void* pLibRemote = VirtualAllocEx(hProcess, NULL, strlen(dllPath) + 1, MEM_COMMIT, PAGE_READWRITE);
 	if (pLibRemote == NULL) {
 		std::cerr << "Failed to allocate memory in target process: " << GetLastError() << std::endl;
 		CloseHandle(hProcess);
-		return;
+		return false;
 	}
 
 	if (!WriteProcessMemory(hProcess, pLibRemote, (void*)dllPath, strlen(dllPath) + 1, NULL)) {
 		std::cerr << "Failed to write to process memory: " << GetLastError() << std::endl;
 		VirtualFreeEx(hProcess, pLibRemote, 0, MEM_RELEASE);
 		CloseHandle(hProcess);
-		return;
+		return false;
 	}
 
 	HMODULE hKernel32 = GetModuleHandleA("Kernel32");
@@ -114,19 +107,63 @@ void InjectDLL(DWORD processID, const char* dllPath) {
 		std::cerr << "Failed to create remote thread: " << GetLastError() << std::endl;
 		VirtualFreeEx(hProcess, pLibRemote, 0, MEM_RELEASE);
 		CloseHandle(hProcess);
-		return;
+		return false;
 	}
 
 	WaitForSingleObject(hThread, INFINITE);
 	VirtualFreeEx(hProcess, pLibRemote, 0, MEM_RELEASE);
 	CloseHandle(hThread);
 	CloseHandle(hProcess);
+	return true;
+}
+
+void Monitor(TCHAR * exeName) {
+	const char* dllPath = hkdll;
+	bool findexe = false;
+	bool isInject = false;
+	while (true) {
+		findexe = false;
+		HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+		if (hSnapshot == INVALID_HANDLE_VALUE) {
+			std::cerr << "Failed to create snapshot: " << GetLastError() << std::endl;
+			return;
+		}
+
+		PROCESSENTRY32 pe;
+		pe.dwSize = sizeof(PROCESSENTRY32);
+		if (Process32First(hSnapshot, &pe)) {
+			do {
+				if (_tcsicmp(pe.szExeFile, exeName) == 0) {
+					findexe = true;
+					if (isInject == false)
+					{
+						if (InjectDLL(pe.th32ProcessID, dllPath))
+						{
+							isInject = true;
+						}
+					}
+				}
+			} while (Process32Next(hSnapshot, &pe));
+		}
+		if (findexe == false)
+		{
+			isInject = false;
+		}
+
+		CloseHandle(hSnapshot);
+		Sleep(1); // Check every second
+	}
 }
 
 int main(int argc, char* argv[])
 //int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) 
 {
 	if (argc > 1)
+	{
+		memcpy(exe, argv[1], 16);
+	}
+	Monitor(exe);
+	/*if (argc > 1)
 	{
 		memcpy(dll, argv[1], 16);
 	}
@@ -140,7 +177,7 @@ int main(int argc, char* argv[])
 		Sleep(1000);
 	}
 
-	DetachHooks();
+	DetachHooks();*/
 	return 0;
 }
 
@@ -150,8 +187,15 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 	switch (ul_reason_for_call)
 	{
 	case DLL_PROCESS_ATTACH:
+	{
+		if (load())
+		{
+			AttachHooks();
+		}
+	}
 		break;
 	case DLL_PROCESS_DETACH:
+		DetachHooks();
 		break;
 	}
 	return TRUE;
