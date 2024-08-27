@@ -23,7 +23,8 @@ func OriginalFunction = NULL;
 #define HOOK_SIZE 5  // 5字节用于存放跳转指令
 DWORD oldcode;
 DWORD ebpValue;
-BYTE* targetAddress;
+DWORD* targetAddress;
+char* pBuffer;
 
 bool load()
 {
@@ -54,12 +55,12 @@ bool load()
 //unsigned char* buffer = NULL;
 
 // 外部函数，用于显示内容
-void ShowMemoryContent(const DWORD* buffer)
+void ShowMemoryContent(DWORD* buffer)
 {
-	targetAddress = (BYTE*)buffer;
+	BYTE* p = (BYTE*)buffer;
 	char hexString[100] = {0}; // 18字节的内容将转换为36字符的十六进制字符串
 	for (int i = 0; i < 18; i++) {
-		sprintf_s(hexString + i * 2, 3, "%02X,", (targetAddress+i));
+		///sprintf_s(hexString + i * 2, 3, "%02X,", (p+i));
 	}
 	// 显示结果
 	MessageBoxA(NULL, hexString, "Memory Content", MB_OK);
@@ -67,6 +68,9 @@ void ShowMemoryContent(const DWORD* buffer)
 unsigned char newData[18] = {
 	0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12
 };
+BYTE memoryData[18];
+char buffer[64];
+FILE* file;
 // Hook 函数
 void __declspec(naked)  HookedFunction() {
 	//__asm {
@@ -76,54 +80,95 @@ void __declspec(naked)  HookedFunction() {
 	//__asm {
 	//	popad
 	//}
+	__asm {
+		pushad
+		pushfd
+	}
+	
+	__asm {
+		mov ecx, dword ptr ss : [ebp - 0x0018]
+		lea edx, dword ptr ds : [ecx + 0x26CA]
+
+		; mov ebp, esp
+		mov esi, edx             // 将 ECX 的值（内存地址）复制到 ESI
+		lea edi, memoryData      // 获取 memoryData 数组的地址
+		mov ecx, 18              // 准备读取 18 字节的数据
+		rep movsb                // 将 ECX 个字节从 [ESI] 复制到 [EDI]
+
+	}
+	// 格式化输出，将每个字节转换为两个十六进制字符并用空格隔开
+	
+	//pBuffer = buffer;
+	//for (int i = 0; i < 18; ++i) {
+	//	sprintf(pBuffer, "%02X ", memoryData[i]);
+	//	pBuffer += 3;  // 移动到下一个存储位置（2 个字符 + 1 个空格）
+	//}
+	//*(pBuffer - 1) = '\0';  // 移除最后一个空格并添加字符串结束符
+	// 显示数据
+	//MessageBoxA(NULL, (char*)memoryData, "Memory Data", MB_OK);
+
+	fopen_s(&file, "memory_data.bin", "ab");  // 以二进制追加模式打开文件
+	if (file != NULL) {
+		fwrite(memoryData, 1, sizeof(memoryData), file);  // 以二进制形式写入文件
+		fclose(file);  // 关闭文件
+	}
 
 
 	__asm {
-		// 保存所有通用寄存器
-		pushad
-		mov ecx, dword ptr ss:[ebp - 0x0018]
-		lea edx, dword ptr ds:[ecx + 0x26CA]
+		popfd                    // 恢复标志寄存器
+		popad                    // 恢复所有通用寄存器
 
-		mov edi, edx
-		// 将 newData 的地址加载到 EDI 寄存器
-		lea esi, newData
-		// 复制 4 个双字 (16 字节)
-		movsd                 // 复制第一个双字
-		movsd                 // 复制第二个双字
-		movsd                 // 复制第三个双字
-		movsd                 // 复制第四个双字
-		// 复制剩余的 2 个字节
-		movsw                 // 复制一个字
+		mov dword ptr ss : [ebp - 0x04A8] , eax
 
-		//mov edi, edx
-		//mov byte ptr[edx + 0], 0x01
-		//mov byte ptr[edx + 1], 0x02
-		//mov byte ptr[edx + 2], 0x03
-		//mov byte ptr[edx + 3], 0x04
-		//mov byte ptr[edx + 4], 0x05
-		//mov byte ptr[edx + 5], 0x06
-		//mov byte ptr[edx + 6], 0x07
-		//mov byte ptr[edx + 7], 0x08
-		//mov byte ptr[edx + 8], 0x09
-		//mov byte ptr[edx + 9], 0x0A
-		//mov byte ptr[edx + 10], 0x0B
-		//mov byte ptr[edx + 11], 0x0C
-		//mov byte ptr[edx + 12], 0x0D
-		//mov byte ptr[edi + 13], 0x0E
-		//mov byte ptr[edx + 14], 0x0F
-		//mov byte ptr[edx + 15], 0x10
-		//mov byte ptr[edx + 16], 0x11
-		//mov byte ptr[edx + 17], 0x12
+		jmp oldcode; 跳回到原始代码后面的位置
+	}
 
-		popad
+	//__asm {
+	//	// 保存所有通用寄存器
+	//	pushad
+	//	mov ecx, dword ptr ss:[ebp - 0x0018]
+	//	lea edx, dword ptr ds:[ecx + 0x26CA]
+
+	//	mov edi, edx
+	//	// 将 newData 的地址加载到 EDI 寄存器
+	//	lea esi, newData
+	//	// 复制 4 个双字 (16 字节)
+	//	movsd                 // 复制第一个双字
+	//	movsd                 // 复制第二个双字
+	//	movsd                 // 复制第三个双字
+	//	movsd                 // 复制第四个双字
+	//	// 复制剩余的 2 个字节
+	//	movsw                 // 复制一个字
+
+	//	//mov edi, edx
+	//	//mov byte ptr[edx + 0], 0x01
+	//	//mov byte ptr[edx + 1], 0x02
+	//	//mov byte ptr[edx + 2], 0x03
+	//	//mov byte ptr[edx + 3], 0x04
+	//	//mov byte ptr[edx + 4], 0x05
+	//	//mov byte ptr[edx + 5], 0x06
+	//	//mov byte ptr[edx + 6], 0x07
+	//	//mov byte ptr[edx + 7], 0x08
+	//	//mov byte ptr[edx + 8], 0x09
+	//	//mov byte ptr[edx + 9], 0x0A
+	//	//mov byte ptr[edx + 10], 0x0B
+	//	//mov byte ptr[edx + 11], 0x0C
+	//	//mov byte ptr[edx + 12], 0x0D
+	//	//mov byte ptr[edi + 13], 0x0E
+	//	//mov byte ptr[edx + 14], 0x0F
+	//	//mov byte ptr[edx + 15], 0x10
+	//	//mov byte ptr[edx + 16], 0x11
+	//	//mov byte ptr[edx + 17], 0x12
+
+	//	popad
 
 		//mov eax, [ebp - 0x374]; 恢复被破坏的代码
 
-		mov dword ptr ss:[ebp - 0x04A8], eax
+		//mov dword ptr ss:[ebp - 0x04A8], eax
 
-		jmp oldcode; 跳回到原始代码后面的位置
+		//jmp oldcode; 跳回到原始代码后面的位置
 
-	}
+	//}
 	//
 	//__asm {
 	//	push edx
