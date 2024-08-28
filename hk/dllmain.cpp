@@ -22,9 +22,6 @@ func OriginalFunction = NULL;
 
 #define HOOK_SIZE 5  // 5字节用于存放跳转指令
 DWORD oldcode;
-DWORD ebpValue;
-DWORD* targetAddress;
-char* pBuffer;
 
 bool load()
 {
@@ -68,7 +65,9 @@ void ShowMemoryContent(DWORD* buffer)
 unsigned char newData[18] = {
 	0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12
 };
+DWORD userID;
 BYTE memoryData[18];
+BYTE roomData[6];
 char buffer[64];
 FILE* file;
 // Hook 函数
@@ -87,13 +86,29 @@ void __declspec(naked)  HookedFunction() {
 	
 	__asm {
 		mov ecx, dword ptr ss : [ebp - 0x0018]
-		lea edx, dword ptr ds : [ecx + 0x26CA]
+		lea edx, dword ptr ds : [ecx + 0x26CA]//9930 牌的位置
 
 		; mov ebp, esp
 		mov esi, edx             // 将 ECX 的值（内存地址）复制到 ESI
 		lea edi, memoryData      // 获取 memoryData 数组的地址
 		mov ecx, 18              // 准备读取 18 字节的数据
 		rep movsb                // 将 ECX 个字节从 [ESI] 复制到 [EDI]
+
+		mov ecx, dword ptr ss : [ebp - 0x0018]
+		lea edx, dword ptr ds : [ecx + 0x2640]//9792 房间位置
+
+		mov esi, edx             // 将 ECX 的值（内存地址）复制到 ESI
+		lea edi, roomData       // 获取 memoryData 数组的地址
+		mov ecx, 6              // 准备读取 6 字节的数据
+		rep movsb               // 将 ECX 个字节从 [ESI] 复制到 [EDI]
+
+		//movzx eax, byte ptr ss : [ebp - 0x0031] //房间人数
+		//mov ecx, dword ptr ss : [ebp - 0x0014]
+		//mov edx, dword ptr ds : [ecx + eax * 4 + 0x2060]
+		//mov edx, dword ptr ds : [ecx + 0x2060]
+		//mov eax, dword ptr ds : [edx + 0x00A3]
+		//mov userID, eax
+
 
 	}
 	// 格式化输出，将每个字节转换为两个十六进制字符并用空格隔开
@@ -107,9 +122,11 @@ void __declspec(naked)  HookedFunction() {
 	// 显示数据
 	//MessageBoxA(NULL, (char*)memoryData, "Memory Data", MB_OK);
 
-	fopen_s(&file, "memory_data.bin", "ab");  // 以二进制追加模式打开文件
+	fopen_s(&file, "room_data.bin", "ab");  // 以二进制追加模式打开文件
 	if (file != NULL) {
-		fwrite(memoryData, 1, sizeof(memoryData), file);  // 以二进制形式写入文件
+		fwrite(roomData, 1, sizeof(roomData), file);  // 以二进制形式写入文件
+		//fwrite("\n", 1, 1, file);
+		//fwrite(&userID, 1, sizeof(userID), file);
 		fclose(file);  // 关闭文件
 	}
 
