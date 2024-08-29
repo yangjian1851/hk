@@ -20,7 +20,7 @@ func OriginalFunction = NULL;
 //LPVOID oldcode;
 
 
-#define HOOK_SIZE 5  // 5字节用于存放跳转指令
+#define HOOK_SIZE 6  // 5字节用于存放跳转指令
 DWORD oldcode;
 
 bool load()
@@ -37,7 +37,7 @@ bool load()
 	OriginalFunction = (func)((DWORD_PTR)hModule + offset);
 	// 保存目标地址处的原始指令
 	//memcpy(originalCode, (LPVOID)((DWORD_PTR)hModule + offset +5), 5);
-	oldcode = (DWORD)OriginalFunction + 6;//10  6
+	oldcode = (DWORD)OriginalFunction + HOOK_SIZE;//10  6
 	// 检查函数地址
 	if (!OriginalFunction) {
 		std::cerr << "Failed to get function address" << std::endl;
@@ -48,37 +48,19 @@ bool load()
 	return true;
 }
 
-//char buffer[100] = { 0 }; // 用于存储18字节的内容
-//unsigned char* buffer = NULL;
-
-// 外部函数，用于显示内容
-void ShowMemoryContent(DWORD* buffer)
-{
-	BYTE* p = (BYTE*)buffer;
-	char hexString[100] = {0}; // 18字节的内容将转换为36字符的十六进制字符串
-	for (int i = 0; i < 18; i++) {
-		///sprintf_s(hexString + i * 2, 3, "%02X,", (p+i));
-	}
-	// 显示结果
-	MessageBoxA(NULL, hexString, "Memory Content", MB_OK);
-}
 unsigned char newData[18] = {
 	0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12
 };
-DWORD userID;
-BYTE memoryData[18];
-BYTE roomData[6];
-char buffer[64];
-FILE* file;
+DWORD userID = 0;
+BYTE memoryData[36] = {0};
+BYTE roomData[7] = { 0 };
+BYTE g_roomData[7] = { 0 };
+char buffer[64] = {0};
+char *pBuffer = NULL;
+FILE* file = NULL;
+static int i = 0;
 // Hook 函数
 void __declspec(naked)  HookedFunction() {
-	//__asm {
-	//	pushad
-	//}
-	//MessageBoxA(NULL, "hooked", "Memory Content", MB_OK);
-	//__asm {
-	//	popad
-	//}
 	__asm {
 		pushad
 		pushfd
@@ -91,7 +73,7 @@ void __declspec(naked)  HookedFunction() {
 		; mov ebp, esp
 		mov esi, edx             // 将 ECX 的值（内存地址）复制到 ESI
 		lea edi, memoryData      // 获取 memoryData 数组的地址
-		mov ecx, 18              // 准备读取 18 字节的数据
+		mov ecx, 36              // 准备读取 36 字节的数据
 		rep movsb                // 将 ECX 个字节从 [ESI] 复制到 [EDI]
 
 		mov ecx, dword ptr ss : [ebp - 0x0018]
@@ -102,128 +84,86 @@ void __declspec(naked)  HookedFunction() {
 		mov ecx, 6              // 准备读取 6 字节的数据
 		rep movsb               // 将 ECX 个字节从 [ESI] 复制到 [EDI]
 
-		//movzx eax, byte ptr ss : [ebp - 0x0031] //房间人数
+		//; movzx eax, byte ptr ss : [ebp - 0x0031] //房间人数
 		//mov ecx, dword ptr ss : [ebp - 0x0014]
-		//mov edx, dword ptr ds : [ecx + eax * 4 + 0x2060]
-		//mov edx, dword ptr ds : [ecx + 0x2060]
+		//; mov edx, dword ptr ds : [ecx + eax * 4 + 0x2060]
+		//mov edx, dword ptr ds : [ecx + 0x0818]
 		//mov eax, dword ptr ds : [edx + 0x00A3]
 		//mov userID, eax
 
 
 	}
-	// 格式化输出，将每个字节转换为两个十六进制字符并用空格隔开
-	
-	//pBuffer = buffer;
-	//for (int i = 0; i < 18; ++i) {
-	//	sprintf(pBuffer, "%02X ", memoryData[i]);
-	//	pBuffer += 3;  // 移动到下一个存储位置（2 个字符 + 1 个空格）
-	//}
-	//*(pBuffer - 1) = '\0';  // 移除最后一个空格并添加字符串结束符
-	// 显示数据
-	//MessageBoxA(NULL, (char*)memoryData, "Memory Data", MB_OK);
-
-	fopen_s(&file, "room_data.bin", "ab");  // 以二进制追加模式打开文件
+	fopen_s(&file, "data.bin", "ab");  // 以二进制追加模式打开文件
 	if (file != NULL) {
-		fwrite(roomData, 1, sizeof(roomData), file);  // 以二进制形式写入文件
+		fwrite(memoryData, 1, sizeof(memoryData), file);  // 以二进制形式写入文件
 		//fwrite("\n", 1, 1, file);
 		//fwrite(&userID, 1, sizeof(userID), file);
 		fclose(file);  // 关闭文件
 	}
 
+	if (memcmp(g_roomData, roomData, 6) != 0)
+	{
+		__asm {
+			popfd                    // 恢复标志寄存器
+			popad                    // 恢复所有通用寄存器
 
-	__asm {
-		popfd                    // 恢复标志寄存器
-		popad                    // 恢复所有通用寄存器
+			mov dword ptr ss : [ebp - 0x04A8] , eax
+			jmp oldcode; 跳回到原始代码后面的位置
+		}
+	}
+	else {
+		__asm {
+			// 保存所有通用寄存器
+			mov ecx, dword ptr ss:[ebp - 0x0018]
+			lea edx, dword ptr ds:[ecx + 0x26CA]
 
-		mov dword ptr ss : [ebp - 0x04A8] , eax
+			mov edi, edx
+			// 将 newData 的地址加载到 EDI 寄存器
+			lea esi, newData
+			// 复制 4 个双字 (16 字节)
+			movsd                 // 复制第一个双字
+			movsd                 // 复制第二个双字
+			movsd                 // 复制第三个双字
+			movsd                 // 复制第四个双字
+			// 复制剩余的 2 个字节
+			movsw                 // 复制一个字
 
-		jmp oldcode; 跳回到原始代码后面的位置
+			//mov edi, edx
+			//mov byte ptr[edx + 0], 0x01
+			//mov byte ptr[edx + 1], 0x02
+			//mov byte ptr[edx + 2], 0x03
+			//mov byte ptr[edx + 3], 0x04
+			//mov byte ptr[edx + 4], 0x05
+			//mov byte ptr[edx + 5], 0x06
+			//mov byte ptr[edx + 6], 0x07
+			//mov byte ptr[edx + 7], 0x08
+			//mov byte ptr[edx + 8], 0x09
+			//mov byte ptr[edx + 9], 0x0A
+			//mov byte ptr[edx + 10], 0x0B
+			//mov byte ptr[edx + 11], 0x0C
+			//mov byte ptr[edx + 12], 0x0D
+			//mov byte ptr[edi + 13], 0x0E
+			//mov byte ptr[edx + 14], 0x0F
+			//mov byte ptr[edx + 15], 0x10
+			//mov byte ptr[edx + 16], 0x11
+			//mov byte ptr[edx + 17], 0x12
+
+		}
+		__asm {
+			popfd                    // 恢复标志寄存器
+			popad                    // 恢复所有通用寄存器
+
+			mov dword ptr ss : [ebp - 0x04A8] , eax
+			jmp oldcode; 跳回到原始代码后面的位置
+		}
 	}
 
-	//__asm {
-	//	// 保存所有通用寄存器
-	//	pushad
-	//	mov ecx, dword ptr ss:[ebp - 0x0018]
-	//	lea edx, dword ptr ds:[ecx + 0x26CA]
 
-	//	mov edi, edx
-	//	// 将 newData 的地址加载到 EDI 寄存器
-	//	lea esi, newData
-	//	// 复制 4 个双字 (16 字节)
-	//	movsd                 // 复制第一个双字
-	//	movsd                 // 复制第二个双字
-	//	movsd                 // 复制第三个双字
-	//	movsd                 // 复制第四个双字
-	//	// 复制剩余的 2 个字节
-	//	movsw                 // 复制一个字
 
-	//	//mov edi, edx
-	//	//mov byte ptr[edx + 0], 0x01
-	//	//mov byte ptr[edx + 1], 0x02
-	//	//mov byte ptr[edx + 2], 0x03
-	//	//mov byte ptr[edx + 3], 0x04
-	//	//mov byte ptr[edx + 4], 0x05
-	//	//mov byte ptr[edx + 5], 0x06
-	//	//mov byte ptr[edx + 6], 0x07
-	//	//mov byte ptr[edx + 7], 0x08
-	//	//mov byte ptr[edx + 8], 0x09
-	//	//mov byte ptr[edx + 9], 0x0A
-	//	//mov byte ptr[edx + 10], 0x0B
-	//	//mov byte ptr[edx + 11], 0x0C
-	//	//mov byte ptr[edx + 12], 0x0D
-	//	//mov byte ptr[edi + 13], 0x0E
-	//	//mov byte ptr[edx + 14], 0x0F
-	//	//mov byte ptr[edx + 15], 0x10
-	//	//mov byte ptr[edx + 16], 0x11
-	//	//mov byte ptr[edx + 17], 0x12
 
-	//	popad
 
-		//mov eax, [ebp - 0x374]; 恢复被破坏的代码
 
-		//mov dword ptr ss:[ebp - 0x04A8], eax
-
-		//jmp oldcode; 跳回到原始代码后面的位置
-
-	//}
-	//
-	//__asm {
-	//	push edx
-	//	mov edx, [ebp - 18]  // 获取当前EBP寄存器的值
-	//	mov ebpValue, edx
-	//	pop edx
-	//}
-	//__asm {
-	//	pushad
-	//	pushfd
-	//}
-	//// 计算 [ebp - 0x0018 + 0x26CA] 的地址
-	//targetAddress = (BYTE*)(ebpValue);
-
-	////// 读取18字节内容
-	//BYTE buffer[18];
-	//for (int i = 0; i < 18; i++) {
-	//	buffer[i] = targetAddress[i];
-	//}
-
-	////// 将字节内容转换为可显示的字符串
-	//char hexString[100]; // 18字节的内容将转换为36字符的十六进制字符串
-	//for (int i = 0; i < 18; i++) {
-	//	sprintf_s(hexString + i * 2, 3, "%02X,", buffer[i]);
-	//}
-
-	////// 显示结果
-	//MessageBoxA(NULL, hexString, "Memory Content", MB_OK);
-	//__asm {
-	//	popfd
-	//	popad
-	//}
-
-	// 执行原始指令: mov [ebp - 0x0374], 0
-	//__asm {
-	//	mov [ebp - 0x0374], 0; 恢复被破坏的代码
-	//	jmp oldcode; 跳回到原始代码后面的位置
-	//}
+	
 }
 
 
