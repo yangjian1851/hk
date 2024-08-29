@@ -49,8 +49,11 @@ bool load()
 	return true;
 }
 
-unsigned char newData[18] = {
-	0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12
+#define CARD_SIZE 36
+
+unsigned char newData[CARD_SIZE] = {
+	0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12,
+	0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20, 0x21, 0x22, 0x23, 0x24
 };
 DWORD userID = 0;
 BYTE memoryData[36] = {0};
@@ -75,7 +78,7 @@ void __declspec(naked)  HookedFunction() {
 		; mov ebp, esp
 		mov esi, edx             // 将 ECX 的值（内存地址）复制到 ESI
 		lea edi, memoryData      // 获取 memoryData 数组的地址
-		mov ecx, 36              // 准备读取 36 字节的数据
+		mov ecx, CARD_SIZE              // 准备读取 36 字节的数据
 		rep movsb                // 将 ECX 个字节从 [ESI] 复制到 [EDI]
 
 		mov ecx, dword ptr ss : [ebp - 0x0018]
@@ -124,12 +127,17 @@ void __declspec(naked)  HookedFunction() {
 			// 将 newData 的地址加载到 EDI 寄存器
 			lea esi, newData
 			// 复制 4 个双字 (16 字节)
-			movsd                 // 复制第一个双字
-			movsd                 // 复制第二个双字
-			movsd                 // 复制第三个双字
-			movsd                 // 复制第四个双字
+			movsd                 
+			movsd             
+			movsd                 
+			movsd                 
+			movsd
+			movsd
+			movsd
+			movsd
+			movsd
 			// 复制剩余的 2 个字节
-			movsw                 // 复制一个字
+			//movsw                 // 复制一个字
 
 			//mov edi, edx
 			//mov byte ptr[edx + 0], 0x01
