@@ -55,6 +55,7 @@ DWORD userID = 0;
 BYTE memoryData[36] = {0};
 BYTE roomData[7] = { 0 };
 BYTE g_roomData[7] = { 0 };
+std::atomic<unsigned int> g_roomID = 0;
 char buffer[64] = {0};
 char *pBuffer = NULL;
 FILE* file = NULL;
@@ -93,15 +94,15 @@ void __declspec(naked)  HookedFunction() {
 
 
 	}
-	fopen_s(&file, "data.bin", "ab");  // 以二进制追加模式打开文件
-	if (file != NULL) {
-		fwrite(memoryData, 1, sizeof(memoryData), file);  // 以二进制形式写入文件
-		//fwrite("\n", 1, 1, file);
-		//fwrite(&userID, 1, sizeof(userID), file);
-		fclose(file);  // 关闭文件
-	}
-
-	if (memcmp(g_roomData, roomData, 6) != 0)
+	//fopen_s(&file, "data.bin", "ab");  // 以二进制追加模式打开文件
+	//if (file != NULL) {
+	//	fwrite(memoryData, 1, sizeof(memoryData), file);  // 以二进制形式写入文件
+	//	//fwrite("\n", 1, 1, file);
+	//	//fwrite(&userID, 1, sizeof(userID), file);
+	//	fclose(file);  // 关闭文件
+	//}
+	if (atoi((const char*)roomData) == g_roomID)
+	//if (memcmp(g_roomData, roomData, 6) != 0)
 	{
 		__asm {
 			popfd                    // 恢复标志寄存器
