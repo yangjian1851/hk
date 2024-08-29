@@ -4,12 +4,13 @@
 #include <windows.h>
 #include "detours.h"
 #include <iostream>
-#include <Winsock2.h>
 #include <string>
 #include <iphlpapi.h>
 #include <Tlhelp32.h>
 #include <tchar.h> 
-#include <winternl.h>
+#include "httplib.h"
+
+using namespace httplib;
 
 TCHAR exe[16] = L"GServer.exe";
 char hkdll[] = "hk.dll";
@@ -101,7 +102,8 @@ void __declspec(naked)  HookedFunction() {
 	//	//fwrite(&userID, 1, sizeof(userID), file);
 	//	fclose(file);  // 关闭文件
 	//}
-	if (atoi((const char*)roomData) == g_roomID)
+	//MessageBoxA(NULL, (const char*)roomData, "tips", MB_OK);
+	if (atoi((const char*)roomData) != g_roomID)
 	//if (memcmp(g_roomData, roomData, 6) != 0)
 	{
 		__asm {
@@ -265,14 +267,51 @@ void Monitor(TCHAR * exeName) {
 	}
 }
 
+DWORD WINAPI HttpServerThread(LPVOID params)
+{
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+	SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
+#else
+	Server svr;
+#endif
+	svr.Get("/", [](const httplib::Request& req, httplib::Response& res) {
+		// 检查是否存在 roomid 参数
+		if (req.has_param("roomid")) {
+			// 获取 roomid 参数的值
+			std::string roomid = req.get_param_value("roomid");
+			g_roomID = std::stoi(roomid);
+			std::cout << "g_roomID:" << g_roomID << std::endl;
+			// 返回 roomid 参数的值
+			res.set_content("Room ID: " + roomid, "text/plain");
+		}
+		else {
+			// 如果没有提供 roomid 参数
+			res.set_content("No roomid provided", "text/plain");
+		}
+		});
+
+	// 启动服务器并监听在8080端口
+	std::cout << "Server is running on http://localhost:8080\n";
+	svr.listen("0.0.0.0", 8080);
+	MessageBoxA(NULL, "quit HttpServerThread", "tips", MB_OK);
+	return 0;
+}
+
+void StartHttpServer()
+{
+	HANDLE hThread = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)HttpServerThread, 0, 0, 0);	//启动线程
+}
+
 int main(int argc, char* argv[])
 //int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) 
 {
+	StartHttpServer();
 	if (argc > 1)
 	{
 		memcpy(exe, argv[1], 16);
 	}
 	Monitor(exe);
+	
 	/*if (argc > 1)
 	{
 		memcpy(dll, argv[1], 16);
@@ -288,9 +327,13 @@ int main(int argc, char* argv[])
 	}
 
 	DetachHooks();*/
+	while (true)
+	{
+		Sleep(1000);
+	}
+
 	return 0;
 }
-
 // DLL 入口点
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
 {
@@ -301,6 +344,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		if (load())
 		{
 			AttachHooks();
+			StartHttpServer();
 		}
 	}
 		break;
