@@ -15,14 +15,59 @@ using namespace httplib;
 TCHAR exe[16] = L"GServer.exe";
 char hkdll[] = "hk.dll";
 char dll[] = "17090400.dll";
+char dll_17061300[] = "17061300.dll";
 // 定义原始函数类型和函数指针
 typedef void (* func)();
 func OriginalFunction = NULL;
+func Original_17061300_Function = NULL;
 //LPVOID oldcode;
 
 
-#define HOOK_SIZE 6  // 5字节用于存放跳转指令
-DWORD oldcode;
+#define HOOK_SIZE 10  // 5字节用于存放跳转指令
+#define CARD_SIZE 36   //棋牌张数
+
+DWORD oldcode = 0;
+DWORD oldcode17061300 = 0;
+DWORD userID = 0;
+BYTE memoryData[36] = { 0 };
+BYTE roomData[7] = { 0 };
+BYTE g_roomData[7] = { 0 };
+std::atomic<unsigned int> g_roomID = 0;
+char buffer[64] = { 0 };
+char* pBuffer = NULL;
+FILE* file = NULL;
+static int i = 0;
+
+unsigned char newData[CARD_SIZE] = {
+	0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12,
+	0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20, 0x21, 0x22, 0x23, 0x24
+};
+
+bool load_17061300()
+{
+	HMODULE hModule = LoadLibraryA(dll_17061300);
+	if (!hModule) {
+		std::cerr << "Failed to load DLL code:" << GetLastError() << std::endl;
+		//MessageBoxA(NULL, "Failed to load DLL", "load dll", MB_OK);
+		return false;
+	}
+	// 计算函数地址，加上偏移
+	DWORD offset = 0x01BC5B;//
+	Original_17061300_Function = (func)((DWORD_PTR)hModule + offset);
+	// 保存目标地址处的原始指令
+	//memcpy(originalCode, (LPVOID)((DWORD_PTR)hModule + offset +5), 5);
+	oldcode17061300 = (DWORD)Original_17061300_Function + HOOK_SIZE;//10  6
+	// 检查函数地址
+	if (!Original_17061300_Function) {
+		std::cerr << "Failed to get function address" << std::endl;
+		//MessageBoxA(NULL, "Failed to load DLL1", "load dll", MB_OK);
+		FreeLibrary(hModule);
+		return false;
+	}
+	std::cerr << "success load " << dll << std::endl;
+	MessageBoxA(NULL, "success load ", "load dll", MB_OK);
+	return true;
+}
 
 bool load()
 {
@@ -49,21 +94,52 @@ bool load()
 	return true;
 }
 
-#define CARD_SIZE 36
+// Hook 函数
+void __declspec(naked)  Hooked_17061300_Function() {
+	__asm {
+		pushad
+		pushfd
+	}
+	MessageBoxA(NULL, "HOOKED", "TIPS", MB_OK);
+	__asm {
+		mov edx, dword ptr ss : [ebp - 0x0490]
+	    lea eax, dword ptr ds : [edx + 0x277E]//10110 牌的位置
 
-unsigned char newData[CARD_SIZE] = {
-	0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12,
-	0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20, 0x21, 0x22, 0x23, 0x24
-};
-DWORD userID = 0;
-BYTE memoryData[36] = {0};
-BYTE roomData[7] = { 0 };
-BYTE g_roomData[7] = { 0 };
-std::atomic<unsigned int> g_roomID = 0;
-char buffer[64] = {0};
-char *pBuffer = NULL;
-FILE* file = NULL;
-static int i = 0;
+		mov esi, eax             // 将 ECX 的值（内存地址）复制到 ESI
+		lea edi, memoryData      // 获取 memoryData 数组的地址
+		mov ecx, CARD_SIZE              // 准备读取 36 字节的数据
+		rep movsb                // 将 ECX 个字节从 [ESI] 复制到 [EDI]
+
+		mov ecx, dword ptr ss : [ebp - 0x0490]
+		lea edx, dword ptr ds : [ecx + 0x2640]//9792 房间位置
+
+		mov esi, edx             // 将 ECX 的值（内存地址）复制到 ESI
+		lea edi, roomData       // 获取 memoryData 数组的地址
+		mov ecx, 6              // 准备读取 6 字节的数据
+		rep movsb               // 将 ECX 个字节从 [ESI] 复制到 [EDI]
+	}
+
+	fopen_s(&file, "data.bin", "ab");  // 以二进制追加模式打开文件
+	if (file != NULL) {
+		fwrite(memoryData, 1, sizeof(memoryData), file);  // 以二进制形式写入文件
+
+		fwrite(roomData, 1, sizeof(roomData), file);
+		//fwrite("\n", 1, 1, file);
+		//fwrite(&userID, 1, sizeof(userID), file);
+		fclose(file);  // 关闭文件
+	}
+	__asm {
+		popfd                    // 恢复标志寄存器
+		popad                    // 恢复所有通用寄存器
+
+		//mov edx, dword ptr ss : [ebp - 0x0490]
+		mov dword ptr ss : [ebp - 0x3A0] , 0
+		//mov dword ptr ss : [ebp - 0x424] , 0;
+		jmp oldcode17061300; 跳回到原始代码后面的位置
+	}
+
+}
+
 // Hook 函数
 void __declspec(naked)  HookedFunction() {
 	__asm {
@@ -184,7 +260,14 @@ void AttachHooks() {
 	DetourTransactionBegin();
 	DetourUpdateThread(GetCurrentThread());
 	// 启用 Hook
-	DetourAttach(&(PVOID&)OriginalFunction, HookedFunction);
+	//if (OriginalFunction)
+	//{
+	//	DetourAttach(&(PVOID&)OriginalFunction, HookedFunction);
+	//}
+	//if (Original_17061300_Function)
+	//{
+		DetourAttach(&(PVOID&)Original_17061300_Function, Hooked_17061300_Function);
+	//}
 
 	DetourTransactionCommit();
 }
@@ -195,7 +278,14 @@ void DetachHooks() {
 	DetourUpdateThread(GetCurrentThread());
 
 	// Detach our hook function
-	DetourDetach(&(PVOID&)OriginalFunction, HookedFunction);
+	//if (OriginalFunction)
+	//{
+	//	DetourDetach(&(PVOID&)OriginalFunction, HookedFunction);
+	//}
+	//if (Original_17061300_Function)
+	//{
+		DetourDetach(&(PVOID&)Original_17061300_Function, Hooked_17061300_Function);
+	//}
 
 	DetourTransactionCommit();
 }
@@ -313,7 +403,7 @@ void StartHttpServer()
 int main(int argc, char* argv[])
 //int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) 
 {
-	StartHttpServer();
+	//StartHttpServer();
 	if (argc > 1)
 	{
 		memcpy(exe, argv[1], 16);
@@ -335,10 +425,6 @@ int main(int argc, char* argv[])
 	}
 
 	DetachHooks();*/
-	while (true)
-	{
-		Sleep(1000);
-	}
 
 	return 0;
 }
@@ -349,10 +435,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 	{
 	case DLL_PROCESS_ATTACH:
 	{
-		if (load())
+		if (load_17061300())
 		{
 			AttachHooks();
-			StartHttpServer();
+			//StartHttpServer();
 		}
 	}
 		break;
