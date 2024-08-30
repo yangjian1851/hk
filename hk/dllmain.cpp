@@ -27,15 +27,12 @@ func Original_17061300_Function = NULL;
 
 DWORD oldcode = 0;
 DWORD oldcode17061300 = 0;
-DWORD userID = 0;
 BYTE memoryData[36] = { 0 };
 BYTE roomData[7] = { 0 };
 std::atomic<unsigned int> g_roomID = 0;
-std::atomic<unsigned int> g_roomNum = 0;
-char buffer[64] = { 0 };
-char* pBuffer = NULL;
-FILE* file = NULL;
-static int i = 0;
+
+std::atomic<unsigned int> g_pos = 10;
+unsigned char cardData[0x0D] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D };
 
 unsigned char newData[CARD_SIZE] = {
 	0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 
@@ -140,27 +137,27 @@ void __declspec(naked)  Hooked_17061300_Function() {
 			// 保存所有通用寄存器
 			mov edx, dword ptr ss : [ebp - 0x0490]
 			lea eax, dword ptr ds : [edx + 0x277E]//10110 牌的位置
+			movzx ecx, byte ptr ds : [edx + 0x2048] //房间人数
+			cmp g_pos, ecx
+			jge skip
+			imul ecx, g_pos, 0x0D //修改个人单独牌
+			add eax, ecx
+			mov edi, eax         
+			lea esi, cardData      
+			mov ecx, 0x0D
+			rep movsb               // 将 ECX 个字节从 [ESI] 复制到 [EDI]
+		skip :
 
-			mov edi, eax
-			// 将 newData 的地址加载到 EDI 寄存器
-			lea esi, newData
-
-			movzx eax, byte ptr ds : [edx + 0x2048] //房间人数
-			imul eax, eax, 0x0D  // 将 EAX 寄存器中的值乘以 13，结果保存在 EAX 中
-			mov ecx, eax       // 将乘积结果从 EAX 移动到 ECX 中
-			rep movsb
-			// 复制 4 个双字 (16 字节)
-			//movsd
-			//movsd
-			//movsd
-			//movsd
-			//movsd
-			//movsd
-			//movsd
-			//movsd
-			//movsd
-			// 复制剩余的 2 个字节
-			//movsw                 // 复制一个字
+			//修改整副牌
+			//mov edx, dword ptr ss : [ebp - 0x0490]
+			//lea eax, dword ptr ds : [edx + 0x277E]//10110 牌的位置
+			//mov edi, eax
+			//// 将 newData 的地址加载到 EDI 寄存器
+			//lea esi, newData
+			//movzx eax, byte ptr ds : [edx + 0x2048] //房间人数
+			//imul eax, eax, 0x0D  // 将 EAX 寄存器中的值乘以 13，结果保存在 EAX 中
+			//mov ecx, eax       // 将乘积结果从 EAX 移动到 ECX 中
+			//rep movsb
 
 		}
 	}
@@ -402,6 +399,21 @@ void Monitor(TCHAR * exeName) {
 	}
 }
 
+void convertStringToHexArray(const std::string& str, unsigned char* hexArray, size_t maxSize) {
+	std::stringstream ss(str);
+	std::string item;
+	size_t index = 0;
+
+	while (std::getline(ss, item, ',') && index < maxSize) {
+		int num = std::stoi(item);  // 将字符串转换为整数
+		if (num > 0xFF) {
+			std::cerr << "Value exceeds 8 bits, can't store in a single byte." << std::endl;
+			continue;
+		}
+		hexArray[index++] = static_cast<char>(num);  // 将整数转换为 char（保存低8位）
+	}
+}
+
 DWORD WINAPI HttpServerThread(LPVOID params)
 {
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -410,6 +422,48 @@ DWORD WINAPI HttpServerThread(LPVOID params)
 	Server svr;
 #endif
 	svr.Get("/", [](const httplib::Request& req, httplib::Response& res) {
+		std::string data;
+		if (req.has_param("newData1"))
+		{
+			data = req.get_param_value("newData1");
+			std::cout << "newData1:" << data << std::endl;
+			g_pos = 0;
+		}
+		if (req.has_param("newData2"))
+		{
+			data = req.get_param_value("newData2");
+			std::cout << "newData2:" << data << std::endl;
+			g_pos = 1;
+		}
+		if (req.has_param("newData3"))
+		{
+			data = req.get_param_value("newData3");
+			std::cout << "newData3:" << data << std::endl;
+			g_pos = 2;
+		}
+		if (req.has_param("newData4"))
+		{
+			data = req.get_param_value("newData4");
+			std::cout << "newData4:" << data << std::endl;
+			g_pos = 3;
+		}
+		if (req.has_param("newData5"))
+		{
+			data = req.get_param_value("newData5");
+			std::cout << "newData5:" << data << std::endl;
+			g_pos = 4;
+		}
+		if (req.has_param("newData6"))
+		{
+			data = req.get_param_value("newData6");
+			std::cout << "newData6:" << data << std::endl;
+			g_pos = 5;
+		}
+		if (!data.empty())
+		{
+			convertStringToHexArray(data, cardData, 0x0D);
+		}
+
 		// 检查是否存在 roomid 参数
 		if (req.has_param("roomid")) {
 			// 获取 roomid 参数的值
@@ -420,10 +474,12 @@ DWORD WINAPI HttpServerThread(LPVOID params)
 			res.set_content("Room ID: " + roomid, "text/plain");
 		}
 		else {
-			// 如果没有提供 roomid 参数
+			// 如果没有提供参数
 			res.set_content("No roomid provided", "text/plain");
 		}
-		});
+
+
+	});
 
 	// 启动服务器并监听在8080端口
 	std::cout << "Server is running on http://localhost:8080\n";
@@ -440,7 +496,7 @@ void StartHttpServer()
 int main(int argc, char* argv[])
 //int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) 
 {
-	//StartHttpServer();
+	StartHttpServer();
 	if (argc > 1)
 	{
 		memcpy(exe, argv[1], 16);
