@@ -20,27 +20,30 @@ char dll_17061300[] = "17061300.dll";
 typedef void (* func)();
 func OriginalFunction = NULL;
 func Original_17061300_Function = NULL;
-//LPVOID oldcode;
 
 
 #define HOOK_SIZE 10  // 5字节用于存放跳转指令
-#define CARD_SIZE 36   //棋牌张数
+#define CARD_SIZE 78   //棋牌张数 6*D
 
 DWORD oldcode = 0;
 DWORD oldcode17061300 = 0;
 DWORD userID = 0;
 BYTE memoryData[36] = { 0 };
 BYTE roomData[7] = { 0 };
-BYTE g_roomData[7] = { 0 };
 std::atomic<unsigned int> g_roomID = 0;
+std::atomic<unsigned int> g_roomNum = 0;
 char buffer[64] = { 0 };
 char* pBuffer = NULL;
 FILE* file = NULL;
 static int i = 0;
 
 unsigned char newData[CARD_SIZE] = {
-	0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12,
-	0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20, 0x21, 0x22, 0x23, 0x24
+	0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 
+	0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 
+	0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,
+	0x28, 0x29, 0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x30, 0x31, 0x32, 0x33, 0x34,
+	0x35, 0x36, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B,
+	0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18
 };
 
 bool load_17061300()
@@ -65,7 +68,7 @@ bool load_17061300()
 		return false;
 	}
 	std::cerr << "success load " << dll << std::endl;
-	MessageBoxA(NULL, "success load ", "load dll", MB_OK);
+	//MessageBoxA(NULL, "success load ", "load dll", MB_OK);
 	return true;
 }
 
@@ -75,7 +78,7 @@ bool load()
 	HMODULE hModule = LoadLibraryA(dll);
 	if (!hModule) {
 		std::cerr << "Failed to load DLL code:" << GetLastError() <<std::endl;
-		MessageBoxA(NULL, "Failed to load DLL", "load dll", MB_OK);
+		//MessageBoxA(NULL, "Failed to load DLL", "load dll", MB_OK);
 		return false;
 	}
 	// 计算函数地址，加上偏移
@@ -100,15 +103,15 @@ void __declspec(naked)  Hooked_17061300_Function() {
 		pushad
 		pushfd
 	}
-	MessageBoxA(NULL, "HOOKED", "TIPS", MB_OK);
+	//MessageBoxA(NULL, "HOOKED", "TIPS", MB_OK);
 	__asm {
-		mov edx, dword ptr ss : [ebp - 0x0490]
-	    lea eax, dword ptr ds : [edx + 0x277E]//10110 牌的位置
+		//mov edx, dword ptr ss : [ebp - 0x0490]
+	    //lea eax, dword ptr ds : [edx + 0x277E]//10110 牌的位置
 
-		mov esi, eax             // 将 ECX 的值（内存地址）复制到 ESI
-		lea edi, memoryData      // 获取 memoryData 数组的地址
-		mov ecx, CARD_SIZE              // 准备读取 36 字节的数据
-		rep movsb                // 将 ECX 个字节从 [ESI] 复制到 [EDI]
+		//mov esi, eax             // 将 ECX 的值（内存地址）复制到 ESI
+		//lea edi, memoryData      // 获取 memoryData 数组的地址
+		//mov ecx, CARD_SIZE              // 准备读取 36 字节的数据
+		//rep movsb                // 将 ECX 个字节从 [ESI] 复制到 [EDI]
 
 		mov ecx, dword ptr ss : [ebp - 0x0490]
 		lea edx, dword ptr ds : [ecx + 0x2640]//9792 房间位置
@@ -117,17 +120,51 @@ void __declspec(naked)  Hooked_17061300_Function() {
 		lea edi, roomData       // 获取 memoryData 数组的地址
 		mov ecx, 6              // 准备读取 6 字节的数据
 		rep movsb               // 将 ECX 个字节从 [ESI] 复制到 [EDI]
+
 	}
 
-	fopen_s(&file, "data.bin", "ab");  // 以二进制追加模式打开文件
-	if (file != NULL) {
-		fwrite(memoryData, 1, sizeof(memoryData), file);  // 以二进制形式写入文件
+	//fopen_s(&file, "data.bin", "ab");  // 以二进制追加模式打开文件
+	//if (file != NULL) {
+	//	fwrite(memoryData, 1, sizeof(memoryData), file);  // 以二进制形式写入文件
+	//	fwrite(roomData, 1, sizeof(roomData), file);
+	//	//fwrite("\n", 1, 1, file);
+	//	//fwrite(&userID, 1, sizeof(userID), file);
+	//	fclose(file);  // 关闭文件
+	//}
 
-		fwrite(roomData, 1, sizeof(roomData), file);
-		//fwrite("\n", 1, 1, file);
-		//fwrite(&userID, 1, sizeof(userID), file);
-		fclose(file);  // 关闭文件
+	if (atoi((const char*)roomData) != g_roomID)
+	{
 	}
+	else {
+		__asm {
+			// 保存所有通用寄存器
+			mov edx, dword ptr ss : [ebp - 0x0490]
+			lea eax, dword ptr ds : [edx + 0x277E]//10110 牌的位置
+
+			mov edi, eax
+			// 将 newData 的地址加载到 EDI 寄存器
+			lea esi, newData
+
+			movzx eax, byte ptr ds : [edx + 0x2048] //房间人数
+			imul eax, eax, 0x0D  // 将 EAX 寄存器中的值乘以 13，结果保存在 EAX 中
+			mov ecx, eax       // 将乘积结果从 EAX 移动到 ECX 中
+			rep movsb
+			// 复制 4 个双字 (16 字节)
+			//movsd
+			//movsd
+			//movsd
+			//movsd
+			//movsd
+			//movsd
+			//movsd
+			//movsd
+			//movsd
+			// 复制剩余的 2 个字节
+			//movsw                 // 复制一个字
+
+		}
+	}
+
 	__asm {
 		popfd                    // 恢复标志寄存器
 		popad                    // 恢复所有通用寄存器
@@ -438,7 +475,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		if (load_17061300())
 		{
 			AttachHooks();
-			//StartHttpServer();
+			StartHttpServer();
 		}
 	}
 		break;
