@@ -9,10 +9,12 @@
 #include <Tlhelp32.h>
 #include <tchar.h> 
 #include "httplib.h"
+#include <psapi.h>
 
 using namespace httplib;
 
-TCHAR exe[16] = L"GServer.exe";
+std::string exe = "GServer.exe";
+std::string exePath = "C:\\Users\\Administrator\\AppData\\dwj\\";
 char hkdll[] = "hk.dll";
 char dll[] = "17090400.dll";
 char dll_17061300[] = "17061300.dll";
@@ -45,7 +47,8 @@ unsigned char newData[CARD_SIZE] = {
 
 bool load_17061300()
 {
-	HMODULE hModule = LoadLibraryA(dll_17061300);
+	std::string loadAllPath = exePath + dll_17061300;
+	HMODULE hModule = LoadLibraryA(loadAllPath.c_str());
 	if (!hModule) {
 		std::cerr << "Failed to load DLL code:" << GetLastError() << std::endl;
 		//MessageBoxA(NULL, "Failed to load DLL", "load dll", MB_OK);
@@ -294,14 +297,14 @@ void AttachHooks() {
 	DetourTransactionBegin();
 	DetourUpdateThread(GetCurrentThread());
 	// 启用 Hook
-	//if (OriginalFunction)
-	//{
-	//	DetourAttach(&(PVOID&)OriginalFunction, HookedFunction);
-	//}
-	//if (Original_17061300_Function)
-	//{
+	if (OriginalFunction)
+	{
+		DetourAttach(&(PVOID&)OriginalFunction, HookedFunction);
+	}
+	if (Original_17061300_Function)
+	{
 		DetourAttach(&(PVOID&)Original_17061300_Function, Hooked_17061300_Function);
-	//}
+	}
 
 	DetourTransactionCommit();
 }
@@ -312,14 +315,14 @@ void DetachHooks() {
 	DetourUpdateThread(GetCurrentThread());
 
 	// Detach our hook function
-	//if (OriginalFunction)
-	//{
-	//	DetourDetach(&(PVOID&)OriginalFunction, HookedFunction);
-	//}
-	//if (Original_17061300_Function)
-	//{
+	if (OriginalFunction)
+	{
+		DetourDetach(&(PVOID&)OriginalFunction, HookedFunction);
+	}
+	if (Original_17061300_Function)
+	{
 		DetourDetach(&(PVOID&)Original_17061300_Function, Hooked_17061300_Function);
-	//}
+	}
 
 	DetourTransactionCommit();
 }
@@ -353,7 +356,7 @@ bool InjectDLL(DWORD processID, const char* dllPath) {
 		CloseHandle(hProcess);
 		return false;
 	}
-
+	std::cerr << "success to injectDll: " << dllPath << std::endl;
 	WaitForSingleObject(hThread, INFINITE);
 	VirtualFreeEx(hProcess, pLibRemote, 0, MEM_RELEASE);
 	CloseHandle(hThread);
@@ -361,7 +364,55 @@ bool InjectDLL(DWORD processID, const char* dllPath) {
 	return true;
 }
 
-void Monitor(TCHAR * exeName) {
+std::string GetFullPath(const std::string& path) {
+	char fullPath[MAX_PATH];
+	if (GetFullPathNameA(path.c_str(), MAX_PATH, fullPath, NULL)) {
+		return std::string(fullPath);
+	}
+	else {
+		return "";
+	}
+}
+
+bool ArePathsSameDirectory(const std::string& path1, const std::string& path2) {
+	std::string fullPath1 = GetFullPath(path1);
+	std::string fullPath2 = GetFullPath(path2);
+
+	if (fullPath1.empty() || fullPath2.empty()) {
+		std::wcerr << L"Error resolving paths." << std::endl;
+		return false;
+	}
+
+	return strcmp(fullPath1.c_str(), fullPath2.c_str()) == 0;
+}
+
+std::string GetProcessPath(DWORD processID) {
+	char processPath[MAX_PATH] = ("");
+
+	// 打开进程句柄
+	HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processID);
+
+	if (hProcess != NULL) {
+		// 获取进程主模块路径
+		if (GetModuleFileNameExA(hProcess, NULL, processPath, MAX_PATH)) {
+			//std::wcout << L"Process ID: " << processID << L" Path: " << processPath << std::endl;
+		}
+		else {
+			std::wcout << L"Failed to get process path for Process ID: " << processID << std::endl;
+		}
+
+		// 关闭进程句柄
+		CloseHandle(hProcess);
+		return processPath;  // 返回进程路径
+	}
+	else {
+		std::wcout << L"Failed to open process for Process ID: " << processID << std::endl;
+	}
+	return processPath;  // 返回进程路径
+}
+
+void Monitor(const TCHAR * exeName) {
+	std::wcout << "Monitor exeName:" << exeName << std::endl;
 	const char* dllPath = hkdll;
 	bool findexe = false;
 	bool isInject = false;
@@ -378,12 +429,22 @@ void Monitor(TCHAR * exeName) {
 		if (Process32First(hSnapshot, &pe)) {
 			do {
 				if (_tcsicmp(pe.szExeFile, exeName) == 0) {
-					findexe = true;
-					if (isInject == false)
+					std::string currentExePath = GetProcessPath(pe.th32ProcessID);
+					size_t pos = currentExePath.find_last_of("\\/");
+					if (pos != std::wstring::npos) {
+						currentExePath = currentExePath.substr(0, pos+1);
+					}
+					//std::cout << "currentExePath:" << currentExePath << std::endl;
+					//std::cout << "exePath:" << exePath << std::endl;
+					if (ArePathsSameDirectory(currentExePath, exePath))
 					{
-						if (InjectDLL(pe.th32ProcessID, dllPath))
+						findexe = true;
+						if (isInject == false)
 						{
-							isInject = true;
+							if (InjectDLL(pe.th32ProcessID, dllPath))
+							{
+								isInject = true;
+							}
 						}
 					}
 				}
@@ -395,7 +456,7 @@ void Monitor(TCHAR * exeName) {
 		}
 
 		CloseHandle(hSnapshot);
-		Sleep(1); // Check every second
+		Sleep(500); // Check every second
 	}
 }
 
@@ -493,15 +554,27 @@ void StartHttpServer()
 	HANDLE hThread = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)HttpServerThread, 0, 0, 0);	//启动线程
 }
 
+std::wstring StringToWString(const std::string& str) {
+	int size_needed = MultiByteToWideChar(CP_ACP, 0, str.c_str(), (int)str.size(), NULL, 0);
+	std::wstring wstrTo(size_needed, 0);
+	MultiByteToWideChar(CP_ACP, 0, str.c_str(), (int)str.size(), &wstrTo[0], size_needed);
+	return wstrTo;
+}
+
 int main(int argc, char* argv[])
 //int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) 
 {
-	StartHttpServer();
-	if (argc > 1)
+	std::wcout << "argc:" << argc << std::endl;
+	//StartHttpServer();
+	if (argc > 2)
 	{
-		memcpy(exe, argv[1], 16);
+		std::cout << "Monitor exeName:" << argv[1] << std::endl;
+		std::cout << "path:" << argv[2] << std::endl;
+		exe = argv[1];
+		exePath = argv[2];
 	}
-	Monitor(exe);
+	std::wstring wstr = StringToWString(exe);
+	Monitor(wstr.c_str());
 	
 	/*if (argc > 1)
 	{
