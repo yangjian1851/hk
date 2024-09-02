@@ -11,6 +11,9 @@
 #include "httplib.h"
 #include <psapi.h>
 
+// 使用 Windows 子系统，不显示控制台窗口
+#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
+
 using namespace httplib;
 
 std::string exe = "GServer.exe";
@@ -32,8 +35,10 @@ DWORD oldcode17061300 = 0;
 BYTE memoryData[36] = { 0 };
 BYTE roomData[7] = { 0 };
 std::atomic<unsigned int> g_roomID = 0;
+std::atomic<unsigned int> g_mode = 1;//1 修改单人 2 修改房间
+std::atomic<unsigned int> g_pos = 100;
+std::atomic<unsigned int> g_svrPort = 8866;
 
-std::atomic<unsigned int> g_pos = 10;
 unsigned char cardData[0x0D] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D };
 
 unsigned char newData[CARD_SIZE] = {
@@ -136,35 +141,40 @@ void __declspec(naked)  Hooked_17061300_Function() {
 	{
 	}
 	else {
-		__asm {
-			// 保存所有通用寄存器
-			mov edx, dword ptr ss : [ebp - 0x0490]
-			lea eax, dword ptr ds : [edx + 0x277E]//10110 牌的位置
-			movzx ecx, byte ptr ds : [edx + 0x2048] //房间人数
-			cmp g_pos, ecx
-			jge skip
-			imul ecx, g_pos, 0x0D //修改个人单独牌
-			add eax, ecx
-			mov edi, eax         
-			lea esi, cardData      
-			mov ecx, 0x0D
-			rep movsb               // 将 ECX 个字节从 [ESI] 复制到 [EDI]
-		skip :
-
-			//修改整副牌
-			//mov edx, dword ptr ss : [ebp - 0x0490]
-			//lea eax, dword ptr ds : [edx + 0x277E]//10110 牌的位置
-			//mov edi, eax
-			//// 将 newData 的地址加载到 EDI 寄存器
-			//lea esi, newData
-			//movzx eax, byte ptr ds : [edx + 0x2048] //房间人数
-			//imul eax, eax, 0x0D  // 将 EAX 寄存器中的值乘以 13，结果保存在 EAX 中
-			//mov ecx, eax       // 将乘积结果从 EAX 移动到 ECX 中
-			//rep movsb
-
+		if (g_mode == 1)//单人修改
+		{
+			__asm {
+				// 保存所有通用寄存器
+				mov edx, dword ptr ss : [ebp - 0x0490]
+				lea eax, dword ptr ds : [edx + 0x277E]//10110 牌的位置
+				movzx ecx, byte ptr ds : [edx + 0x2048] //房间人数
+				cmp g_pos, ecx
+				jge skip
+				imul ecx, g_pos, 0x0D //修改个人单独牌
+				add eax, ecx
+				mov edi, eax
+				lea esi, cardData
+				mov ecx, 0x0D
+				rep movsb               // 将 ECX 个字节从 [ESI] 复制到 [EDI]
+				skip :
+			}
+		}
+		else { //修改房间
+			__asm {
+				//修改整副牌
+				mov edx, dword ptr ss : [ebp - 0x0490]
+				lea eax, dword ptr ds : [edx + 0x277E]//10110 牌的位置
+				mov edi, eax
+				// 将 newData 的地址加载到 EDI 寄存器
+				lea esi, newData
+				movzx eax, byte ptr ds : [edx + 0x2048] //房间人数
+				imul eax, eax, 0x0D  // 将 EAX 寄存器中的值乘以 13，结果保存在 EAX 中
+				mov ecx, eax       // 将乘积结果从 EAX 移动到 ECX 中
+				rep movsb
+			}
 		}
 	}
-
+	g_roomID = 0;
 	__asm {
 		popfd                    // 恢复标志寄存器
 		popad                    // 恢复所有通用寄存器
@@ -251,27 +261,6 @@ void __declspec(naked)  HookedFunction() {
 			movsd
 			// 复制剩余的 2 个字节
 			//movsw                 // 复制一个字
-
-			//mov edi, edx
-			//mov byte ptr[edx + 0], 0x01
-			//mov byte ptr[edx + 1], 0x02
-			//mov byte ptr[edx + 2], 0x03
-			//mov byte ptr[edx + 3], 0x04
-			//mov byte ptr[edx + 4], 0x05
-			//mov byte ptr[edx + 5], 0x06
-			//mov byte ptr[edx + 6], 0x07
-			//mov byte ptr[edx + 7], 0x08
-			//mov byte ptr[edx + 8], 0x09
-			//mov byte ptr[edx + 9], 0x0A
-			//mov byte ptr[edx + 10], 0x0B
-			//mov byte ptr[edx + 11], 0x0C
-			//mov byte ptr[edx + 12], 0x0D
-			//mov byte ptr[edi + 13], 0x0E
-			//mov byte ptr[edx + 14], 0x0F
-			//mov byte ptr[edx + 15], 0x10
-			//mov byte ptr[edx + 16], 0x11
-			//mov byte ptr[edx + 17], 0x12
-
 		}
 		__asm {
 			popfd                    // 恢复标志寄存器
@@ -281,7 +270,7 @@ void __declspec(naked)  HookedFunction() {
 			jmp oldcode; 跳回到原始代码后面的位置
 		}
 	}
-
+	g_roomID = 0;
 
 
 
@@ -489,46 +478,59 @@ DWORD WINAPI HttpServerThread(LPVOID params)
 			data = req.get_param_value("newData1");
 			std::cout << "newData1:" << data << std::endl;
 			g_pos = 0;
+			g_mode = 1;
 		}
 		if (req.has_param("newData2"))
 		{
 			data = req.get_param_value("newData2");
 			std::cout << "newData2:" << data << std::endl;
 			g_pos = 1;
+			g_mode = 1;
 		}
 		if (req.has_param("newData3"))
 		{
 			data = req.get_param_value("newData3");
 			std::cout << "newData3:" << data << std::endl;
 			g_pos = 2;
+			g_mode = 1;
 		}
 		if (req.has_param("newData4"))
 		{
 			data = req.get_param_value("newData4");
 			std::cout << "newData4:" << data << std::endl;
 			g_pos = 3;
+			g_mode = 1;
 		}
 		if (req.has_param("newData5"))
 		{
 			data = req.get_param_value("newData5");
 			std::cout << "newData5:" << data << std::endl;
 			g_pos = 4;
+			g_mode = 1;
 		}
 		if (req.has_param("newData6"))
 		{
 			data = req.get_param_value("newData6");
 			std::cout << "newData6:" << data << std::endl;
 			g_pos = 5;
+			g_mode = 1;
 		}
 		if (!data.empty())
 		{
 			convertStringToHexArray(data, cardData, 0x0D);
 		}
 
-		// 检查是否存在 roomid 参数
-		if (req.has_param("roomid")) {
+		if (req.has_param("param2")) {
 			// 获取 roomid 参数的值
-			std::string roomid = req.get_param_value("roomid");
+			std::string param2 = req.get_param_value("param2");
+			convertStringToHexArray(param2, newData, CARD_SIZE);
+			g_mode = 2;
+		}
+
+		// 检查是否存在 roomid 参数
+		if (req.has_param("param1")) {
+			// 获取 roomid 参数的值
+			std::string roomid = req.get_param_value("param1");
 			g_roomID = std::stoi(roomid);
 			std::cout << "g_roomID:" << g_roomID << std::endl;
 			// 返回 roomid 参数的值
@@ -543,8 +545,8 @@ DWORD WINAPI HttpServerThread(LPVOID params)
 	});
 
 	// 启动服务器并监听在8080端口
-	std::cout << "Server is running on http://localhost:8080\n";
-	svr.listen("0.0.0.0", 8080);
+	std::cout << "Server is running on http://localhost:" << g_svrPort << std::endl;
+	svr.listen("0.0.0.0", g_svrPort);
 	MessageBoxA(NULL, "quit HttpServerThread", "tips", MB_OK);
 	return 0;
 }
@@ -565,13 +567,15 @@ int main(int argc, char* argv[])
 //int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) 
 {
 	std::wcout << "argc:" << argc << std::endl;
-	//StartHttpServer();
-	if (argc > 2)
+
+	if (argc > 3)
 	{
 		std::cout << "Monitor exeName:" << argv[1] << std::endl;
 		std::cout << "path:" << argv[2] << std::endl;
 		exe = argv[1];
 		exePath = argv[2];
+		//g_svrPort = std::atoi(argv[3]);
+
 	}
 	std::wstring wstr = StringToWString(exe);
 	Monitor(wstr.c_str());

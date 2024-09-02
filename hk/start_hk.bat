@@ -1,0 +1,1 @@
+start hk.exe "GServer.exe" "C:\\Users\\Administrator\\AppData\\dwj\\"
