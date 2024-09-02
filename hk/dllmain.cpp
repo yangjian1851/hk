@@ -12,12 +12,12 @@
 #include <psapi.h>
 
 // 使用 Windows 子系统，不显示控制台窗口
-#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
+//#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
 
 using namespace httplib;
 
 std::string exe = "GServer.exe";
-std::string exePath = "C:\\Users\\Administrator\\AppData\\dwj\\";
+std::string exePath = "D:\\Fjdwj\\server\\sss6-1\\";
 char hkdll[] = "hk.dll";
 char dll[] = "17090400.dll";
 char dll_17061300[] = "17061300.dll";
@@ -37,7 +37,7 @@ BYTE roomData[7] = { 0 };
 std::atomic<unsigned int> g_roomID = 0;
 std::atomic<unsigned int> g_mode = 1;//1 修改单人 2 修改房间
 std::atomic<unsigned int> g_pos = 100;
-std::atomic<unsigned int> g_svrPort = 8866;
+std::atomic<unsigned int> g_svrPort = 8080;
 
 unsigned char cardData[0x0D] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D };
 
@@ -73,7 +73,7 @@ bool load_17061300()
 		return false;
 	}
 	std::cerr << "success load " << dll << std::endl;
-	//MessageBoxA(NULL, "success load ", "load dll", MB_OK);
+	//MessageBoxA(NULL, loadAllPath.c_str(), "load dll", MB_OK);
 	return true;
 }
 
@@ -400,9 +400,10 @@ std::string GetProcessPath(DWORD processID) {
 	return processPath;  // 返回进程路径
 }
 
-void Monitor(const TCHAR * exeName) {
+void Monitor(const TCHAR* exeName, std::string curRunPath) {
 	std::wcout << "Monitor exeName:" << exeName << std::endl;
-	const char* dllPath = hkdll;
+	std::string dllPath = curRunPath + hkdll;
+	std::cout << "dllPath:" << dllPath << std::endl;
 	bool findexe = false;
 	bool isInject = false;
 	while (true) {
@@ -430,7 +431,7 @@ void Monitor(const TCHAR * exeName) {
 						findexe = true;
 						if (isInject == false)
 						{
-							if (InjectDLL(pe.th32ProcessID, dllPath))
+							if (InjectDLL(pe.th32ProcessID, dllPath.c_str()))
 							{
 								isInject = true;
 							}
@@ -568,17 +569,23 @@ int main(int argc, char* argv[])
 {
 	std::wcout << "argc:" << argc << std::endl;
 
-	if (argc > 3)
+	if (argc > 2)
 	{
 		std::cout << "Monitor exeName:" << argv[1] << std::endl;
 		std::cout << "path:" << argv[2] << std::endl;
 		exe = argv[1];
-		exePath = argv[2];
-		//g_svrPort = std::atoi(argv[3]);
 
 	}
 	std::wstring wstr = StringToWString(exe);
-	Monitor(wstr.c_str());
+	char path[MAX_PATH] = { 0 };
+	GetModuleFileNameA(NULL, path, MAX_PATH);
+	std::string curRunPath = path;
+	std::cout << "curRunPath:" << curRunPath << std::endl;
+	size_t pos = curRunPath.find_last_of("\\/");
+	if (pos != std::wstring::npos) {
+		curRunPath = curRunPath.substr(0, pos + 1);
+	}
+	Monitor(wstr.c_str(), curRunPath);
 	
 	/*if (argc > 1)
 	{
