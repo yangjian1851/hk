@@ -37,7 +37,7 @@ BYTE roomData[7] = { 0 };
 std::atomic<unsigned int> g_roomID = 0;
 std::atomic<unsigned int> g_mode = 1;//1 修改单人 2 修改房间
 std::atomic<unsigned int> g_pos = 100;
-std::atomic<unsigned int> g_svrPort = 8080;
+std::atomic<unsigned int> g_svrPort = 23602;
 
 unsigned char cardData[0x0D] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D };
 
