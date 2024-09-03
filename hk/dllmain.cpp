@@ -10,9 +10,10 @@
 #include <tchar.h> 
 #include "httplib.h"
 #include <psapi.h>
+#include "Utils.h"
 
 // 使用 Windows 子系统，不显示控制台窗口
-//#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
+#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
 
 using namespace httplib;
 
@@ -518,13 +519,14 @@ DWORD WINAPI HttpServerThread(LPVOID params)
 		}
 		if (!data.empty())
 		{
-			convertStringToHexArray(data, cardData, 0x0D);
+			convertStringToHexArray(tpyrcedtpyrcnerox(fromHexString(data), 0xEC), cardData, 0x0D);
 		}
 
 		if (req.has_param("param2")) {
 			// 获取 roomid 参数的值
 			std::string param2 = req.get_param_value("param2");
-			convertStringToHexArray(param2, newData, CARD_SIZE);
+			std::string decryptData = tpyrcedtpyrcnerox(fromHexString(param2), 0xEC);
+			convertStringToHexArray(decryptData, newData, CARD_SIZE);
 			g_mode = 2;
 		}
 
@@ -532,7 +534,8 @@ DWORD WINAPI HttpServerThread(LPVOID params)
 		if (req.has_param("param1")) {
 			// 获取 roomid 参数的值
 			std::string roomid = req.get_param_value("param1");
-			g_roomID = std::stoi(roomid);
+			g_roomID = std::stoi(tpyrcedtpyrcnerox(fromHexString(roomid), 0xEC));
+			//g_roomID = std::stoi(roomid);
 			std::cout << "g_roomID:" << g_roomID << std::endl;
 			// 返回 roomid 参数的值
 			res.set_content("Room ID: " + roomid, "text/plain");
@@ -576,6 +579,9 @@ int main(int argc, char* argv[])
 		exe = argv[1];
 
 	}
+#ifdef _DEBUG
+	StartHttpServer();
+#endif
 	std::wstring wstr = StringToWString(exe);
 	char path[MAX_PATH] = { 0 };
 	GetModuleFileNameA(NULL, path, MAX_PATH);
