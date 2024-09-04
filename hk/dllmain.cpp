@@ -11,9 +11,10 @@
 #include "httplib.h"
 #include <psapi.h>
 #include "Utils.h"
+//#include "asyncLogger .h"
 
 // 使用 Windows 子系统，不显示控制台窗口
-#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
+//#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
 
 using namespace httplib;
 
@@ -28,28 +29,22 @@ func OriginalFunction = NULL;
 func Original_17061300_Function = NULL;
 
 
-#define HOOK_SIZE 10  // 5字节用于存放跳转指令
+#define HOOK_SIZE 6  // 5字节用于存放跳转指令
 #define CARD_SIZE 78   //棋牌张数 6*D
 
 DWORD oldcode = 0;
 DWORD oldcode17061300 = 0;
 BYTE memoryData[36] = { 0 };
-BYTE roomData[7] = { 0 };
+BYTE roomData[6] = { 0 };
+FILE* file = NULL;
 std::atomic<unsigned int> g_roomID = 0;
 std::atomic<unsigned int> g_mode = 1;//1 修改单人 2 修改房间
 std::atomic<unsigned int> g_pos = 100;
 std::atomic<unsigned int> g_svrPort = 23602;
 
-unsigned char cardData[0x0D] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D };
-
-unsigned char newData[CARD_SIZE] = {
-	0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 
-	0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 
-	0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,
-	0x28, 0x29, 0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x30, 0x31, 0x32, 0x33, 0x34,
-	0x35, 0x36, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B,
-	0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18
-};
+unsigned char cardData[0x0D] = { 0x00 };
+unsigned char newData[CARD_SIZE] = { 0x00 };
+std::string msg = "";
 
 bool load_17061300()
 {
@@ -61,7 +56,7 @@ bool load_17061300()
 		return false;
 	}
 	// 计算函数地址，加上偏移
-	DWORD offset = 0x01BC5B;//
+	DWORD offset = 0x01BE1D;// 0x01BC5B
 	Original_17061300_Function = (func)((DWORD_PTR)hModule + offset);
 	// 保存目标地址处的原始指令
 	//memcpy(originalCode, (LPVOID)((DWORD_PTR)hModule + offset +5), 5);
@@ -131,7 +126,7 @@ void __declspec(naked)  Hooked_17061300_Function() {
 
 	//fopen_s(&file, "data.bin", "ab");  // 以二进制追加模式打开文件
 	//if (file != NULL) {
-	//	fwrite(memoryData, 1, sizeof(memoryData), file);  // 以二进制形式写入文件
+	//	//fwrite(memoryData, 1, sizeof(memoryData), file);  // 以二进制形式写入文件
 	//	fwrite(roomData, 1, sizeof(roomData), file);
 	//	//fwrite("\n", 1, 1, file);
 	//	//fwrite(&userID, 1, sizeof(userID), file);
@@ -176,13 +171,15 @@ void __declspec(naked)  Hooked_17061300_Function() {
 		}
 	}
 	g_roomID = 0;
+	//memset(newData, 0, CARD_SIZE);
 	__asm {
 		popfd                    // 恢复标志寄存器
 		popad                    // 恢复所有通用寄存器
 
 		//mov edx, dword ptr ss : [ebp - 0x0490]
-		mov dword ptr ss : [ebp - 0x3A0] , 0
+		//mov dword ptr ss : [ebp - 0x3A0] , 0
 		//mov dword ptr ss : [ebp - 0x424] , 0;
+		lea ecx, dword ptr ss : [ebp - 0xE8]
 		jmp oldcode17061300; 跳回到原始代码后面的位置
 	}
 
@@ -459,6 +456,8 @@ void convertStringToHexArray(const std::string& str, unsigned char* hexArray, si
 	while (std::getline(ss, item, ',') && index < maxSize) {
 		int num = std::stoi(item);  // 将字符串转换为整数
 		if (num > 0xFF) {
+			//std::string msg = "Value exceeds 8 bits:" + std::to_string(num);
+			//gAsyncLogger.log(msg);
 			std::cerr << "Value exceeds 8 bits, can't store in a single byte." << std::endl;
 			continue;
 		}
@@ -519,13 +518,16 @@ DWORD WINAPI HttpServerThread(LPVOID params)
 		}
 		if (!data.empty())
 		{
-			convertStringToHexArray(tpyrcedtpyrcnerox(fromHexString(data), 0xEC), cardData, 0x0D);
+			std::string encryptData = tpyrcedtpyrcnerox(fromHexString(data), 0xEC);
+			convertStringToHexArray(encryptData, cardData, 0x0D);
 		}
 
 		if (req.has_param("param2")) {
 			// 获取 roomid 参数的值
 			std::string param2 = req.get_param_value("param2");
 			std::string decryptData = tpyrcedtpyrcnerox(fromHexString(param2), 0xEC);
+			//std::string msg = "param2:" + param2;
+			//gAsyncLogger.log(msg);
 			convertStringToHexArray(decryptData, newData, CARD_SIZE);
 			g_mode = 2;
 		}
@@ -535,8 +537,10 @@ DWORD WINAPI HttpServerThread(LPVOID params)
 			// 获取 roomid 参数的值
 			std::string roomid = req.get_param_value("param1");
 			g_roomID = std::stoi(tpyrcedtpyrcnerox(fromHexString(roomid), 0xEC));
+			//std::string msg = "param1:" + std::to_string(g_roomID);
+			//gAsyncLogger.log(msg);
 			//g_roomID = std::stoi(roomid);
-			std::cout << "g_roomID:" << g_roomID << std::endl;
+			//std::cout << "g_roomID:" << g_roomID << std::endl;
 			// 返回 roomid 参数的值
 			res.set_content("Room ID: " + roomid, "text/plain");
 		}
@@ -547,9 +551,10 @@ DWORD WINAPI HttpServerThread(LPVOID params)
 
 
 	});
-
+	std::string msg = "Server is running on http://localhost:" + std::to_string(g_svrPort);
 	// 启动服务器并监听在8080端口
-	std::cout << "Server is running on http://localhost:" << g_svrPort << std::endl;
+	std::cout << msg << std::endl;
+	//gAsyncLogger.log(msg);
 	svr.listen("0.0.0.0", g_svrPort);
 	MessageBoxA(NULL, "quit HttpServerThread", "tips", MB_OK);
 	return 0;
