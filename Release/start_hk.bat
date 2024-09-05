@@ -1,0 +1,1 @@
+start hk.exe "GServer.exe" "D:\\Fjdwj\\server\\sss6-1\\" "hk_17061300.dll"
