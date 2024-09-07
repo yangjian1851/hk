@@ -18,7 +18,7 @@ BYTE roomData[6] = { 0 };
 std::atomic<unsigned int> g_pos = 0;
 std::atomic<unsigned int> g_mode = 2;
 std::atomic<unsigned int> g_roomID = 0;
-std::atomic<unsigned int> g_svrPort = 23602;
+std::atomic<unsigned int> g_svrPort = 23606;
 unsigned char newData[CARD_SIZE] = { 0x00 };
 unsigned char cardData[0x0D] = { 0x00 };
 
