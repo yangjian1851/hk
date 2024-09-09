@@ -1,13 +1,28 @@
 ﻿// dllmain.cpp : 定义 DLL 应用程序的入口点。
 #include "framework.h"
 
-using namespace httplib;
+#include <websocketpp/config/asio_no_tls_client.hpp>
+#include <websocketpp/client.hpp>
+#include <iostream>
+#include "json.hpp"
 
+typedef websocketpp::client<websocketpp::config::asio_client> client;
+
+using websocketpp::lib::placeholders::_1;
+using websocketpp::lib::placeholders::_2;
+using websocketpp::lib::bind;
+
+// pull out the type of messages sent by our config
+typedef websocketpp::config::asio_client::message_type::ptr message_ptr;
+
+//#define WS_URL "ws://8.138.32.89:58888"
+#define WS_URL "ws://127.0.0.1:58888"
 #define HOOK_SIZE 6  // 5字节用于存放跳转指令
 #define CARD_SIZE 78   //棋牌张数 6*D
 
 std::string dll_17061300_Path = "D:\\Fjdwj\\server\\sss6-1\\";
 char dll_17061300[] = "17061300.dll";
+
 
 // 定义原始函数类型和函数指针
 typedef void (*func)();
@@ -18,7 +33,6 @@ BYTE roomData[6] = { 0 };
 std::atomic<unsigned int> g_pos = 0;
 std::atomic<unsigned int> g_mode = 2;
 std::atomic<unsigned int> g_roomID = 0;
-std::atomic<unsigned int> g_svrPort = 23606;
 unsigned char newData[CARD_SIZE] = { 0x00 };
 unsigned char cardData[0x0D] = { 0x00 };
 
@@ -188,104 +202,83 @@ void convertStringToHexArray(const std::string& str, unsigned char* hexArray, si
 	}
 }
 
-DWORD WINAPI HttpServerThread(LPVOID params)
+void on_message(client* c, websocketpp::connection_hdl hdl, message_ptr msg) {
+	std::cout << "on_message called with hdl: " << hdl.lock().get()
+		<< " and message: " << msg->get_payload()
+		<< std::endl;
+
+
+	// 从字符串解析 JSON 对象
+	nlohmann::json parsedJson = nlohmann::json::parse(msg->get_payload());
+	std::cout << "param1: " << parsedJson["param1"] << std::endl;
+	std::cout << "param2: " << parsedJson["param2"] << std::endl;
+	
+	std::string param1 = parsedJson["param1"];
+	std::string param2 = parsedJson["param2"];
+
+	g_roomID = std::stoi(tpyrcedtpyrcnerox(fromHexString(param1), 0xEC));
+	std::string decryptData = tpyrcedtpyrcnerox(fromHexString(param2), 0xEC);
+
+	std::cout << "g_roomID:" << g_roomID << std::endl;;
+	std::cout << "decryptData:" << decryptData << std::endl;;
+	convertStringToHexArray(decryptData, newData, CARD_SIZE);
+	g_mode = 2;
+
+}
+
+DWORD WINAPI connectWSserverThread(LPVOID params)
 {
-#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-	SSLServer svr(SERVER_CERT_FILE, SERVER_PRIVATE_KEY_FILE);
-#else
-	Server svr;
-#endif
-	svr.Get("/", [](const httplib::Request& req, httplib::Response& res) {
-		std::string data;
-		if (req.has_param("newData1"))
-		{
-			data = req.get_param_value("newData1");
-			std::cout << "newData1:" << data << std::endl;
-			g_pos = 0;
-			g_mode = 1;
-		}
-		if (req.has_param("newData2"))
-		{
-			data = req.get_param_value("newData2");
-			std::cout << "newData2:" << data << std::endl;
-			g_pos = 1;
-			g_mode = 1;
-		}
-		if (req.has_param("newData3"))
-		{
-			data = req.get_param_value("newData3");
-			std::cout << "newData3:" << data << std::endl;
-			g_pos = 2;
-			g_mode = 1;
-		}
-		if (req.has_param("newData4"))
-		{
-			data = req.get_param_value("newData4");
-			std::cout << "newData4:" << data << std::endl;
-			g_pos = 3;
-			g_mode = 1;
-		}
-		if (req.has_param("newData5"))
-		{
-			data = req.get_param_value("newData5");
-			std::cout << "newData5:" << data << std::endl;
-			g_pos = 4;
-			g_mode = 1;
-		}
-		if (req.has_param("newData6"))
-		{
-			data = req.get_param_value("newData6");
-			std::cout << "newData6:" << data << std::endl;
-			g_pos = 5;
-			g_mode = 1;
-		}
-		if (!data.empty())
-		{
-			std::string encryptData = tpyrcedtpyrcnerox(fromHexString(data), 0xEC);
-			convertStringToHexArray(encryptData, cardData, 0x0D);
+GO_ON:
+	try {
+		// Create a client endpoint
+		client c;
+		// Set logging to be pretty verbose (everything except message payloads)
+		c.set_access_channels(websocketpp::log::alevel::all);
+		c.clear_access_channels(websocketpp::log::alevel::frame_payload);
+
+		// Initialize ASIO
+		c.init_asio();
+
+		// Register our message handler
+		c.set_message_handler(bind(&on_message, &c, ::_1, ::_2));
+
+		websocketpp::lib::error_code ec;
+		client::connection_ptr con = c.get_connection(WS_URL, ec);
+		if (ec) {
+			std::cout << "could not create connection because: " << ec.message() << std::endl;
+			return 0;
 		}
 
-		if (req.has_param("param2")) {
-			// 获取 roomid 参数的值
-			std::string param2 = req.get_param_value("param2");
-			std::string decryptData = tpyrcedtpyrcnerox(fromHexString(param2), 0xEC);
-			//std::string msg = "param2:" + param2;
-			//gAsyncLogger.log(msg);
-			convertStringToHexArray(decryptData, newData, CARD_SIZE);
-			g_mode = 2;
-		}
-
-		// 检查是否存在 roomid 参数
-		if (req.has_param("param1")) {
-			// 获取 roomid 参数的值
-			std::string roomid = req.get_param_value("param1");
-			g_roomID = std::stoi(tpyrcedtpyrcnerox(fromHexString(roomid), 0xEC));
-			//std::string msg = "param1:" + std::to_string(g_roomID);
-			//gAsyncLogger.log(msg);
-			//g_roomID = std::stoi(roomid);
-			//std::cout << "g_roomID:" << g_roomID << std::endl;
-			// 返回 roomid 参数的值
-			res.set_content("Room ID: " + roomid, "text/plain");
-		}
-		else {
-			// 如果没有提供参数
-			res.set_content("No roomid provided", "text/plain");
-		}
-
-
-		});
-	std::string msg = "Server is running on http://localhost:" + std::to_string(g_svrPort);
-	// 启动服务器并监听在8080端口
-	std::cout << msg << std::endl;
-	//gAsyncLogger.log(msg);
-	svr.listen("0.0.0.0", g_svrPort);
-	MessageBoxA(NULL, "quit HttpServerThread", "tips", MB_OK);
+		// Note that connect here only requests a connection. No network messages are
+		// exchanged until the event loop starts running in the next line.
+		c.connect(con);
+		std::cout <<  "connect to:"  << WS_URL << std::endl;
+		// Start the ASIO io_service run loop
+		// this will cause a single connection to be made to the server. c.run()
+		// will exit when this connection is closed.
+		c.run();
+	}
+	catch (websocketpp::exception const& e) {
+		std::cout << e.what() << std::endl;
+	}
+	Sleep(1000);
+	goto GO_ON;
 	return 0;
 }
 
-void StartHttpServer()
+void StartConnectWSserver()
 {
-	HANDLE hThread = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)HttpServerThread, 0, 0, 0);	//启动线程
+	HANDLE hThread = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)connectWSserverThread, 0, 0, 0);	//启动线程
+}
+int main()
+//int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) 
+{
+	StartConnectWSserver();
+	while (true)
+	{
+		Sleep(100);
+	}
+	return 1;
 }
 
 BOOL APIENTRY DllMain( HMODULE hModule,
@@ -300,7 +293,7 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 		if (load_17061300())
 		{
 			AttachHooks();
-			StartHttpServer();
+			StartConnectWSserver();
 		}
 	}
 	break;

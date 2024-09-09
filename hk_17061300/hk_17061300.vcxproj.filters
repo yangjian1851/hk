@@ -24,9 +24,6 @@
     <ClInclude Include="..\common\asyncLogger .h">
       <Filter>common</Filter>
     </ClInclude>
-    <ClInclude Include="..\common\httplib.h">
-      <Filter>common</Filter>
-    </ClInclude>
     <ClInclude Include="..\common\Utils.h">
       <Filter>common</Filter>
     </ClInclude>
