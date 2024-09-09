@@ -7,4 +7,6 @@
 #include <iostream>
 #include <string>
 #include "Utils.h"
+#include "ws_client.h"
+#include "json.hpp"
 

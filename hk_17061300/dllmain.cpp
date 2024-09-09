@@ -1,22 +1,10 @@
 ﻿// dllmain.cpp : 定义 DLL 应用程序的入口点。
 #include "framework.h"
 
-#include <websocketpp/config/asio_no_tls_client.hpp>
-#include <websocketpp/client.hpp>
-#include <iostream>
-#include "json.hpp"
 
-typedef websocketpp::client<websocketpp::config::asio_client> client;
-
-using websocketpp::lib::placeholders::_1;
-using websocketpp::lib::placeholders::_2;
-using websocketpp::lib::bind;
-
-// pull out the type of messages sent by our config
-typedef websocketpp::config::asio_client::message_type::ptr message_ptr;
-
+#define WS_URL "ws://149.104.31.209:58888"
 //#define WS_URL "ws://8.138.32.89:58888"
-#define WS_URL "ws://127.0.0.1:58888"
+//#define WS_URL "ws://127.0.0.1:58888"
 #define HOOK_SIZE 6  // 5字节用于存放跳转指令
 #define CARD_SIZE 78   //棋牌张数 6*D
 
@@ -203,65 +191,44 @@ void convertStringToHexArray(const std::string& str, unsigned char* hexArray, si
 }
 
 void on_message(client* c, websocketpp::connection_hdl hdl, message_ptr msg) {
-	std::cout << "on_message called with hdl: " << hdl.lock().get()
-		<< " and message: " << msg->get_payload()
-		<< std::endl;
-
-
 	// 从字符串解析 JSON 对象
-	nlohmann::json parsedJson = nlohmann::json::parse(msg->get_payload());
-	std::cout << "param1: " << parsedJson["param1"] << std::endl;
-	std::cout << "param2: " << parsedJson["param2"] << std::endl;
-	
-	std::string param1 = parsedJson["param1"];
-	std::string param2 = parsedJson["param2"];
+	try
+	{
+		nlohmann::json parsedJson = nlohmann::json::parse(msg->get_payload());
+		std::cout << "param1: " << parsedJson["param1"] << std::endl;
+		std::cout << "param2: " << parsedJson["param2"] << std::endl;
 
-	g_roomID = std::stoi(tpyrcedtpyrcnerox(fromHexString(param1), 0xEC));
-	std::string decryptData = tpyrcedtpyrcnerox(fromHexString(param2), 0xEC);
+		std::string param1 = parsedJson["param1"];
+		std::string param2 = parsedJson["param2"];
 
-	std::cout << "g_roomID:" << g_roomID << std::endl;;
-	std::cout << "decryptData:" << decryptData << std::endl;;
-	convertStringToHexArray(decryptData, newData, CARD_SIZE);
-	g_mode = 2;
+		g_roomID = std::stoi(tpyrcedtpyrcnerox(fromHexString(param1), 0xEC));
+		std::string decryptData = tpyrcedtpyrcnerox(fromHexString(param2), 0xEC);
+
+		std::cout << "g_roomID:" << g_roomID << std::endl;;
+		std::cout << "decryptData:" << decryptData << std::endl;;
+		convertStringToHexArray(decryptData, newData, CARD_SIZE);
+		g_mode = 2;
+	}
+	catch (const std::exception&)
+	{
+
+	}
 
 }
-
+ws_client *g_client = NULL;
 DWORD WINAPI connectWSserverThread(LPVOID params)
 {
 GO_ON:
 	try {
-		// Create a client endpoint
-		client c;
-		// Set logging to be pretty verbose (everything except message payloads)
-		c.set_access_channels(websocketpp::log::alevel::all);
-		c.clear_access_channels(websocketpp::log::alevel::frame_payload);
-
-		// Initialize ASIO
-		c.init_asio();
-
-		// Register our message handler
-		c.set_message_handler(bind(&on_message, &c, ::_1, ::_2));
-
-		websocketpp::lib::error_code ec;
-		client::connection_ptr con = c.get_connection(WS_URL, ec);
-		if (ec) {
-			std::cout << "could not create connection because: " << ec.message() << std::endl;
-			return 0;
-		}
-
-		// Note that connect here only requests a connection. No network messages are
-		// exchanged until the event loop starts running in the next line.
-		c.connect(con);
-		std::cout <<  "connect to:"  << WS_URL << std::endl;
-		// Start the ASIO io_service run loop
-		// this will cause a single connection to be made to the server. c.run()
-		// will exit when this connection is closed.
-		c.run();
+		g_client = new ws_client(&on_message);
+		g_client->run(WS_URL);
+		delete g_client;
+		g_client = NULL;
 	}
 	catch (websocketpp::exception const& e) {
 		std::cout << e.what() << std::endl;
 	}
-	Sleep(1000);
+	Sleep(3000);
 	goto GO_ON;
 	return 0;
 }

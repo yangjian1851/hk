@@ -27,6 +27,9 @@
     <ClInclude Include="..\common\Utils.h">
       <Filter>common</Filter>
     </ClInclude>
+    <ClInclude Include="ws_client.h">
+      <Filter>common</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
