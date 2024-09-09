@@ -156,8 +156,8 @@
   <ItemGroup>
     <ClInclude Include="..\common\asyncLogger .h" />
     <ClInclude Include="..\common\Utils.h" />
+    <ClInclude Include="..\common\ws_client.h" />
     <ClInclude Include="framework.h" />
-    <ClInclude Include="ws_client.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\common\Utils.cpp" />
