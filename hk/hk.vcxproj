@@ -163,6 +163,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="asyncLogger .h" />
     <ClInclude Include="framework.h" />
   </ItemGroup>
   <ItemGroup>
