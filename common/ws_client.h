@@ -61,7 +61,7 @@ public:
 		m_ping_thread = std::thread([this, hdl]() {
 
 			while (m_connected) {
-				std::this_thread::sleep_for(std::chrono::seconds(5)); // 每分钟发送 ping
+				std::this_thread::sleep_for(std::chrono::seconds(30)); // 每分钟发送 ping
 				if (m_connected)
 				{
 					std::cout << "send heartbeat " << std::endl;
@@ -69,7 +69,7 @@ public:
 					{
 						client::connection_ptr con = m_client.get_con_from_hdl(hdl);
 						if (con->get_state() == websocketpp::session::state::open)
-							m_client.send(hdl, "heartbeat", 9, websocketpp::frame::opcode::value::text);
+							m_client.send(hdl, "heartbeat5", 10, websocketpp::frame::opcode::value::text);
 					}
 					catch (const std::exception&)
 					{

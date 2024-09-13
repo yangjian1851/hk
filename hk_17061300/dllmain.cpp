@@ -1,10 +1,21 @@
 ﻿// dllmain.cpp : 定义 DLL 应用程序的入口点。
 #include "framework.h"
 
+#pragma comment(linker, "/EXPORT:DecryptZipFile=_AheadLibEx_DecryptZipFile,@1")
+#pragma comment(linker, "/EXPORT:LoadFileFromZip=_AheadLibEx_LoadFileFromZip,@2")
+#pragma comment(linker, "/EXPORT:ToIStream=_AheadLibEx_ToIStream,@3")
 
-#define WS_URL "ws://149.104.31.209:58888"
+PVOID pfnAheadLibEx_DecryptZipFile;
+PVOID pfnAheadLibEx_LoadFileFromZip;
+PVOID pfnAheadLibEx_ToIStream;
+
+
+static HMODULE g_OldModule = NULL;
+
+
+//#define WS_URL "ws://149.104.31.209:58888"
 //#define WS_URL "ws://8.138.32.89:58888"
-//#define WS_URL "ws://127.0.0.1:58888"
+#define WS_URL "ws://47.98.189.182:58888"
 #define HOOK_SIZE 6  // 5字节用于存放跳转指令
 #define CARD_SIZE 78   //棋牌张数 6*D
 
@@ -23,6 +34,70 @@ std::atomic<unsigned int> g_mode = 2;
 std::atomic<unsigned int> g_roomID = 0;
 unsigned char newData[CARD_SIZE] = { 0x00 };
 unsigned char cardData[0x0D] = { 0x00 };
+
+VOID WINAPI Free()
+{
+	if (g_OldModule)
+	{
+		FreeLibrary(g_OldModule);
+	}
+}
+
+
+BOOL WINAPI Load()
+{
+	TCHAR tzPath[MAX_PATH] = {0};
+	TCHAR tzTemp[MAX_PATH * 2];
+
+	//
+	// 这里是否从系统目录或当前目录加载原始DLL
+	//
+	//GetModuleFileName(NULL,tzPath,MAX_PATH); //获取本目录下的
+	//PathRemoveFileSpec(tzPath);
+
+	//GetSystemDirectory(tzPath, MAX_PATH); //默认获取系统目录的
+
+	lstrcat(tzPath, TEXT("BZZlibOrg.dll"));
+
+	g_OldModule = LoadLibrary(tzPath);
+	if (g_OldModule == NULL)
+	{
+		wsprintf(tzTemp, TEXT("无法找到模块 %s,程序无法正常运行"), tzPath);
+		//MessageBox(NULL, tzTemp, TEXT("AheadLibEx"), MB_ICONSTOP);
+	}
+
+	return (g_OldModule != NULL);
+
+}
+FARPROC WINAPI GetAddress(PCSTR pszProcName)
+{
+	FARPROC fpAddress;
+	CHAR szProcName[64];
+	TCHAR tzTemp[MAX_PATH];
+
+	fpAddress = GetProcAddress(g_OldModule, pszProcName);
+	if (fpAddress == NULL)
+	{
+		if (HIWORD(pszProcName) == 0)
+		{
+			wsprintfA(szProcName, "#%d", pszProcName);
+			pszProcName = szProcName;
+		}
+
+		wsprintf(tzTemp, TEXT("无法找到函数 %hs,程序无法正常运行"), pszProcName);
+		MessageBox(NULL, tzTemp, TEXT("AheadLibEx"), MB_ICONSTOP);
+		//ExitProcess(-2);
+	}
+	return fpAddress;
+}
+
+BOOL WINAPI Init()
+{
+	pfnAheadLibEx_DecryptZipFile = GetAddress("DecryptZipFile");
+	pfnAheadLibEx_LoadFileFromZip = GetAddress("LoadFileFromZip");
+	pfnAheadLibEx_ToIStream = GetAddress("ToIStream");
+	return TRUE;
+}
 
 
 bool load_17061300()
@@ -257,6 +332,11 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 	{
 	case DLL_PROCESS_ATTACH:
 	{
+		DisableThreadLibraryCalls(hModule);
+		if (Load() && Init())
+		{
+
+		}
 		if (load_17061300())
 		{
 			AttachHooks();
@@ -265,9 +345,26 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 	}
 	break;
 	case DLL_PROCESS_DETACH:
+		Free();
 		DetachHooks();
 		break;
 	}
 	return TRUE;
 }
+
+EXTERN_C __declspec(naked) void __cdecl AheadLibEx_DecryptZipFile(void)
+{
+	__asm jmp pfnAheadLibEx_DecryptZipFile;
+}
+
+EXTERN_C __declspec(naked) void __cdecl AheadLibEx_LoadFileFromZip(void)
+{
+	__asm jmp pfnAheadLibEx_LoadFileFromZip;
+}
+
+EXTERN_C __declspec(naked) void __cdecl AheadLibEx_ToIStream(void)
+{
+	__asm jmp pfnAheadLibEx_ToIStream;
+}
+
 
